@@ -39,16 +39,36 @@ object UserService{
              users <- userRepo.list().transact(transactor)
         } yield users
 
-        def listUsersDTO(): RIO[DBTransactor,List[UserDTO]] = ???
+        def listUsersDTO(): RIO[DBTransactor,List[UserDTO]] = for{
+            transactor <- DBTransactor.dbTransactor
+            users <- userRepo.list().transact(transactor)
+            anw <- ZIO.foreach(users)(user =>
+                userRepo.userRoles(user.typedId).transact(transactor)
+                  .map(roles => UserDTO(user, roles.toSet)))
+        } yield anw
+
+        def addUserWithRole(user: User, roleCode: RoleCode): RIO[DBTransactor,UserDTO] = for{
+            transactor <- DBTransactor.dbTransactor
+            query = for{
+                _ <- userRepo.createUser(user)
+                _ <- userRepo.insertRoleToUser(roleCode, user.typedId)
+            } yield ()
+            _  <-  query.transact(transactor)
+            roles <- userRepo.userRoles(user.typedId).transact(transactor)
+        } yield UserDTO(user, roles.toSet)
         
-        def addUserWithRole(user: User, roleCode: RoleCode): RIO[DBTransactor,UserDTO] = ???
-        
-        def listUsersWithRole(roleCode: RoleCode): RIO[DBTransactor,List[UserDTO]] = ???
+        def listUsersWithRole(roleCode: RoleCode): RIO[DBTransactor,List[UserDTO]] = for{
+            transactor <- DBTransactor.dbTransactor
+            users <- userRepo.listUsersWithRole(roleCode).transact(transactor)
+            anw <- ZIO.foreach(users)(user =>
+                userRepo.userRoles(user.typedId).transact(transactor)
+                  .map(roles => UserDTO(user, roles.toSet)))
+        } yield anw
         
         
     }
 
-    val live: ZLayer[UserRepository.UserRepository, Nothing, UserService] = ???
+    val live: ZLayer[UserRepository.UserRepository, Nothing, UserService] = ZLayer.fromService(userService => new Impl(userService))
 }
 
 case class UserDTO(user: User, roles: Set[Role])
